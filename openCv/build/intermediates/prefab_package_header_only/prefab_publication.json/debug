@@ -1,0 +1,17 @@
+{
+  "installationFolder": "C:\\RMIT\\Android Dev\\MyApplication\\openCv\\build\\intermediates\\prefab_package\\debug\\prefab",
+  "gradlePath": ":openCv",
+  "packageInfo": {
+    "packageName": "openCv",
+    "packageSchemaVersion": 2,
+    "packageDependencies": [],
+    "modules": [
+      {
+        "moduleName": "opencv_jni_shared",
+        "moduleHeaders": "C:\\RMIT\\Android Dev\\MyApplication\\openCv\\native\\jni\\include",
+        "moduleExportLibraries": [],
+        "abis": []
+      }
+    ]
+  }
+}
