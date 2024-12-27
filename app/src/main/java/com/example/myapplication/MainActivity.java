@@ -42,6 +42,7 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -314,56 +315,71 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void processUploadedImage(String imagePath) {
+    public void processUploadedImage(String imagePath) {
         if (!OpenCVLoader.initDebug()) {
             Log.e("OpenCV", "Unable to load OpenCV");
             return;
         }
 
-        // Read the image
+        // Load the image
         Mat img = Imgcodecs.imread(imagePath);
         if (img.empty()) {
             Log.e("OpenCV", "Failed to load image");
             return;
         }
 
-        // Convert the image to grayscale
+        // Convert to grayscale
         Mat gray = new Mat();
         Imgproc.cvtColor(img, gray, Imgproc.COLOR_BGR2GRAY);
 
+        // Enhance contrast
+        Mat enhanced = new Mat();
+        Imgproc.equalizeHist(gray, enhanced);
+
         // Apply Gaussian blur to reduce noise
-        Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
+        Imgproc.GaussianBlur(enhanced, enhanced, new Size(9, 9), 2);
 
-        // Apply adaptive thresholding for better segmentation
-        Mat binary = new Mat();
-        Imgproc.adaptiveThreshold(gray, binary, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 15, 10);
+        // Detect circles using Hough Circle Transform
+        Mat circles = new Mat();
+        Imgproc.HoughCircles(
+                enhanced,
+                circles,
+                Imgproc.HOUGH_GRADIENT,
+                1,        // Inverse ratio of resolution
+                20,       // Minimum distance between detected centers
+                100,      // Upper threshold for the Canny edge detector
+                30,       // Threshold for center detection
+                10,       // Minimum radius
+                100       // Maximum radius
+        );
 
-        // Perform morphological operations to close gaps
-        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3));
-        Imgproc.morphologyEx(binary, binary, Imgproc.MORPH_CLOSE, kernel);
+        // Filter overlapping circles
+        List<Circle> filteredCircles = filterOverlappingCircles(circles);
 
-        // Find contours in the processed binary image
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(binary, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        // Draw circles and count
+        int circleCount = filteredCircles.size();
+        for (int i = 0; i < filteredCircles.size(); i++) {
+            Circle circle = filteredCircles.get(i);
+            Point center = circle.center;
+            int radius = circle.radius;
 
-        int keyCount = 0;
+            // Draw the circle outline
+            Imgproc.circle(img, center, radius, new Scalar(0, 255, 0), 2);
 
-        // Iterate through the contours and filter by size
-        for (MatOfPoint contour : contours) {
-            Rect rect = Imgproc.boundingRect(contour);
-
-            // Filter based on size (to detect keys accurately)
-            if (rect.width > 30 && rect.height > 30 && rect.width < 100 && rect.height < 100) {
-                keyCount++;
-
-                // Draw a rectangle around the detected key
-                Imgproc.rectangle(img, rect.tl(), rect.br(), new Scalar(0, 255, 0), 2);
-            }
+            // Draw the circle index
+            Imgproc.putText(
+                    img,
+                    String.valueOf(i + 1),
+                    new Point(center.x - 10, center.y - 10),
+                    Imgproc.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    new Scalar(255, 255, 255),
+                    2
+            );
         }
 
-        // Save the processed image with key contours
-        File processedFile = new File(getExternalFilesDir(null), "processed_keyboard.jpg");
+        // Save the processed image
+        File processedFile = new File("processed_image.jpg");
         boolean success = Imgcodecs.imwrite(processedFile.getAbsolutePath(), img);
 
         if (!success) {
@@ -371,17 +387,55 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Update the UI with results
-        int finalKeyCount = keyCount;
-        runOnUiThread(() -> {
-            TextView resultTextView = findViewById(R.id.resultTextView);
-            resultTextView.setText("Total Keys Counted: " + finalKeyCount);
-
-            ImageView uploadedImageView = findViewById(R.id.uploadedImageView);
-            Uri processedUri = Uri.fromFile(processedFile);
-            uploadedImageView.setImageURI(processedUri);
-        });
+        // Display results on the UI
+        Log.d("OpenCV", "Circles counted: " + circleCount);
     }
+
+    private List<Circle> filterOverlappingCircles(Mat circles) {
+        List<Circle> circleList = new ArrayList<>();
+        for (int i = 0; i < circles.cols(); i++) {
+            double[] circleParams = circles.get(0, i);
+            if (circleParams == null) continue;
+            Point center = new Point(circleParams[0], circleParams[1]);
+            int radius = (int) Math.round(circleParams[2]);
+            circleList.add(new Circle(center, radius));
+        }
+
+        // Filter overlapping circles
+        List<Circle> filteredCircles = new ArrayList<>();
+        for (Circle circle : circleList) {
+            boolean isOverlapping = false;
+            for (Circle filtered : filteredCircles) {
+                double distance = Math.sqrt(Math.pow(circle.center.x - filtered.center.x, 2) +
+                        Math.pow(circle.center.y - filtered.center.y, 2));
+                if (distance < (circle.radius + filtered.radius) * 0.8) { // Overlap threshold
+                    isOverlapping = true;
+                    break;
+                }
+            }
+            if (!isOverlapping) {
+                filteredCircles.add(circle);
+            }
+        }
+
+        return filteredCircles;
+    }
+
+    private static class Circle {
+        Point center;
+        int radius;
+
+        Circle(Point center, int radius) {
+            this.center = center;
+            this.radius = radius;
+        }
+    }
+
+
+
+
+
+
 
 
 
